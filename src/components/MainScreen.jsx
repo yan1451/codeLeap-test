@@ -8,11 +8,19 @@ import { PostCard } from './PostCard'
 import './MainScreen.css'
 import './Modal.css'
 
+const PAGE_SIZE = 10
+
 export function MainScreen() {
   const { username, clearUsername } = useUsername()
   const { getPostEngagement, toggleLike, addComment, deleteComment } =
     useEngagement()
   const [posts, setPosts] = useState([])
+  const [offset, setOffset] = useState(0)
+  const [pagination, setPagination] = useState({
+    count: 0,
+    next: null,
+    previous: null,
+  })
   const [usernameFilter, setUsernameFilter] = useState('')
   const [sortOrder, setSortOrder] = useState('newest')
   const [title, setTitle] = useState('')
@@ -25,12 +33,21 @@ export function MainScreen() {
   const [editTarget, setEditTarget] = useState(null)
   const normalizedUsernameFilter = usernameFilter.trim().replace(/^@+/, '')
 
-  const loadPosts = async (filterValue = '') => {
+  const loadPosts = async (filterValue = '', offsetValue = 0) => {
     setIsLoading(true)
     try {
       setError('')
-      const data = await getPosts(filterValue)
-      setPosts(data)
+      const data = await getPosts({
+        username: filterValue,
+        limit: PAGE_SIZE,
+        offset: offsetValue,
+      })
+      setPosts(data.results)
+      setPagination({
+        count: data.count,
+        next: data.next,
+        previous: data.previous,
+      })
     } catch {
       setError('Could not load posts.')
     } finally {
@@ -39,12 +56,16 @@ export function MainScreen() {
   }
 
   useEffect(() => {
+    setOffset(0)
+  }, [normalizedUsernameFilter])
+
+  useEffect(() => {
     const timeoutId = setTimeout(() => {
-      loadPosts(normalizedUsernameFilter)
+      loadPosts(normalizedUsernameFilter, offset)
     }, 300)
 
     return () => clearTimeout(timeoutId)
-  }, [normalizedUsernameFilter])
+  }, [normalizedUsernameFilter, offset])
 
   const sortedPosts = useMemo(() => {
     return [...posts].sort((a, b) => {
@@ -60,6 +81,8 @@ export function MainScreen() {
   }, [posts, sortOrder])
 
   const canCreate = title.trim() !== '' && content.trim() !== '' && !isSubmitting
+  const currentPage = Math.floor(offset / PAGE_SIZE) + 1
+  const totalPages = Math.max(1, Math.ceil(pagination.count / PAGE_SIZE))
 
   const handleCreate = async (event) => {
     event.preventDefault()
@@ -76,7 +99,7 @@ export function MainScreen() {
       })
       setTitle('')
       setContent('')
-      await loadPosts(normalizedUsernameFilter)
+      await loadPosts(normalizedUsernameFilter, offset)
     } catch {
       setError('Could not create post.')
     } finally {
@@ -93,7 +116,7 @@ export function MainScreen() {
     try {
       await deletePost(deleteTarget.id)
       setDeleteTarget(null)
-      await loadPosts(normalizedUsernameFilter)
+      await loadPosts(normalizedUsernameFilter, offset)
     } catch {
       setError('Could not delete post.')
     } finally {
@@ -110,7 +133,7 @@ export function MainScreen() {
     try {
       await updatePost(editTarget.id, payload)
       setEditTarget(null)
-      await loadPosts(normalizedUsernameFilter)
+      await loadPosts(normalizedUsernameFilter, offset)
     } catch {
       setError('Could not update post.')
     } finally {
@@ -216,6 +239,28 @@ export function MainScreen() {
               }
             />
           ))}
+
+        {!isLoading && (
+          <div className="pagination-controls">
+            <button
+              type="button"
+              disabled={!pagination.previous}
+              onClick={() => setOffset((value) => Math.max(0, value - PAGE_SIZE))}
+            >
+              Anterior
+            </button>
+            <span>
+              Página {currentPage} de {totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={!pagination.next}
+              onClick={() => setOffset((value) => value + PAGE_SIZE)}
+            >
+              Próxima
+            </button>
+          </div>
+        )}
       </section>
 
       {deleteTarget && (
